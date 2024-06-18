@@ -26,7 +26,7 @@ begin
       ini := TIniFile.Create(ChangeFileExt(ParamStr(0),'.ini'));
       try
         client.host := ini.ReadString('server','host','localhost');
-        client.port := ini.ReadInteger('server','port',8090);
+        client.port := ini.ReadInteger('server','port',8099);
       finally
         ini.Free;
       end;

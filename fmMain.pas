@@ -6,7 +6,7 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, IdBaseComponent, IdComponent,
   IdCustomTCPServer, IdCustomHTTPServer, IdHTTPServer, Vcl.StdCtrls,
-  Vcl.ExtCtrls, IdContext;
+  Vcl.ExtCtrls, IdContext, Vcl.Mask;
 
 type
   TMainForm = class(TForm)
@@ -25,7 +25,9 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
   private
-    { Private declarations }
+    FSigntoolPath: String;
+    FSigntoolCmdLine: String;
+    FCrossCert: String;
     procedure TestAndStartHTTPServer;
     procedure StartHTTPServer;
     function TrySignFile:boolean;
@@ -33,6 +35,8 @@ type
     procedure LoadSettings;
     procedure SaveSettings;
     procedure FlushLog;
+    procedure UpdateUIEnabledState(AEnabled: Boolean);
+    procedure StopHTTPServer;
   public
     procedure Log(const AMessage:string);
 
@@ -173,11 +177,9 @@ procedure TMainForm.btStartClick(Sender: TObject);
 begin
   if httpServ.Active then
   begin
-    Log('[HTTP] Stopping server');
-    httpServ.Active := false;
-  end;
-
-  TestAndStartHTTPServer;
+    StopHTTPServer;
+  end else
+    TestAndStartHTTPServer;
 end;
 
 procedure TMainForm.FlushLog;
@@ -241,10 +243,10 @@ begin
       begin
         if FileExists(ARequestInfo.Params.Values['file']) then
         begin
-          if SignFile('"'+edSigntoolPath.Text+'" ' +
-                      ifthen(ARequestInfo.Params.Values['additional'] <>'', ARequestInfo.Params.Values['additional'], edSigntoolCmdLine.Text),
+          if SignFile('"'+FSigntoolPath+'" ' +
+                      ifthen(ARequestInfo.Params.Values['additional'] <>'', ARequestInfo.Params.Values['additional'], FSigntoolCmdLine),
                       ARequestInfo.Params.Values['file'],
-                      edCross.Text,
+                      FCrossCert,
                       msg) then
           begin
             Log('File "'+ARequestInfo.Params.Values['file']+'" signed');
@@ -266,16 +268,20 @@ begin
       if ARequestInfo.PostStream <> nil then
       begin
         tempname := GetTempFileName('post',ExtractFileExt(ARequestInfo.Params.Values['file']));
+
         fs := TFileStream.Create(tempname, fmCreate);
-        ARequestInfo.PostStream.Position := 0;
-        fs.CopyFrom(ARequestInfo.PostStream, ARequestInfo.PostStream.Size);
-        fs.Free;
+        try
+          ARequestInfo.PostStream.Position := 0;
+          fs.CopyFrom(ARequestInfo.PostStream, ARequestInfo.PostStream.Size);
+        finally
+          fs.Free;
+        end;
 
         try
-          if SignFile('"'+edSigntoolPath.Text+'" ' +
-                      ifthen(ARequestInfo.Params.Values['additional'] <>'', ARequestInfo.Params.Values['additional'], edSigntoolCmdLine.Text),
+          if SignFile('"'+FSigntoolPath+'" ' +
+                      ifthen(ARequestInfo.Params.Values['additional'] <>'', ARequestInfo.Params.Values['additional'], FSigntoolCmdLine),
                       tempname,
-                      edCross.Text,
+                      FCrossCert,
                       msg) then
           begin
             Log('File "'+tempname+'" signed');
@@ -316,7 +322,7 @@ begin
   try
     edSigntoolPath.Text := ini.ReadString('server', 'signtool_path','signtool.exe');
     edSigntoolCmdLine.Text := ini.ReadString('server', 'signtool_commandline','sign /a "%s"');
-    edHttpPort.Text := ini.ReadInteger('server', 'http_port',8090).ToString;
+    edHttpPort.Text := ini.ReadInteger('server', 'http_port',8099).ToString;
     edCross.Text := ini.ReadString('server','cross_cert','GlobalSign Root CA.crt');
   finally
     ini.Free;
@@ -328,6 +334,7 @@ var
   msg: string;
 begin
   msg := DateTimeTostr(now)+' ['+TThread.CurrentThread.ThreadID.ToString+'] '+ AMessage;
+
   TThread.Queue(nil, procedure
   begin
     if MainForm.memLog.Lines.Count > 20 then
@@ -359,17 +366,44 @@ end;
 
 procedure TMainForm.StartHTTPServer;
 begin
+  Log('[HTTP] Starting server');
+
+  FSigntoolPath := edSigntoolPath.Text;
+  FSigntoolCmdLine := edSigntoolCmdLine.Text;
+  FCrossCert := edCross.Text;
+
   httpServ.DefaultPort := string(edHttpPort.Text).ToInteger;
   httpServ.Active := true;
+
+  btStart.Caption := 'Stop server';
+  UpdateUIEnabledState(false);
+end;
+
+procedure TMainForm.StopHTTPServer;
+begin
+  Log('[HTTP] Stopping server');
+
+  httpServ.Active := false;
+
+  btStart.Caption := 'Start server';
+  UpdateUIEnabledState(true);
+end;
+
+procedure TMainForm.UpdateUIEnabledState(AEnabled: Boolean);
+begin
+  edSigntoolPath.Enabled := AEnabled;
+  edSigntoolCmdLine.Enabled := AEnabled;
+  edCross.Enabled := AEnabled;
+  edHttpPort.Enabled := AEnabled;
 end;
 
 procedure TMainForm.TestAndStartHTTPServer;
 begin
-  Log('Trying to sign test file, you MUST enter password for token!');
+  Log('Trying to sign test file, you MUST enter password for token if not provided in signtool parameters!');
   if not TrySignFile then
   begin
     pnTop.Color := $8080ff;
-    Log('TEST FAILED!!!')
+    Log('TEST FAILED!')
   end
   else
     StartHTTPServer;
@@ -390,11 +424,13 @@ begin
 
   tryfile := ChangeFileExt(ParamStr(0),'_try.exe');
   TFile.Copy(ParamStr(0), tryfile, true);
-
-  if not SignFile('"'+edSigntoolPath.Text+'" ' + edSigntoolCmdLine.Text, tryfile, '', msg, false) then
-    Log('Error: '+msg)
-  else begin
-    result := true;
+  try
+    if not SignFile('"'+edSigntoolPath.Text+'" ' + edSigntoolCmdLine.Text, tryfile, '', msg, false) then
+      Log('Error: '+msg)
+    else begin
+      result := true;
+    end;
+  finally
     TFile.Delete(tryfile);
   end;
 end;
