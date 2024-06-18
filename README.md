@@ -2,6 +2,20 @@
 
 This tool can be used to automate EV Codesigning process on your build server.
 
+### Notes on this fork
+Quick noted changes: start/stop server support, Win64 Platform, small MultiThread improvement, modernization (Segoe UI font), control alignment, def port to 8099
+
+AutoIt is not required. It's possible to provied the password in the signtool command line in the /kc parameter.
+
+Example as batch:
+``` 
+SET SIGNTOOL="C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe"
+%SIGNTOOL% sign /f "mycert.cer" /csp "eToken Base Cryptographic Provider" /kc "[{{PASSWORT}}]=p11#b891b4357e4ea5d6" /fd sha256 /tr "http://timestamp.digicert.com" /td sha256 /as /v TheFileToSign.exe
+``` 
+
+Credits goes to the SirAlex for publishing the original project.
+
+
 ### Limitations of EV Codesignig with SafeNet token:
 1. You must login locally to buildserver. Or if you logged to server via RDP, you must attach token to local machine instead of server.
 2. If you have more than one developer who want to build project with signing files, you can't do it, because you cannot replicate your token.
