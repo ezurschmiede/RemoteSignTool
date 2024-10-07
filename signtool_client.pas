@@ -67,12 +67,15 @@ procedure TRemoteSignToolClient.ProcessError(const resultStream: TStream);
 var
   rdr: TStreamReader;
 begin
-  if resultStream <> nil then
+  if (resultStream <> nil) and (resultStream.Size > 0) then
   begin
     rdr := TStreamReader.Create(resultStream);
-    resultStream.Position := 0;
-    _ErrorMessage := rdr.ReadToEnd;
-    rdr.Free;
+    try
+      resultStream.Position := 0;
+      _ErrorMessage := rdr.ReadToEnd;
+    finally
+      rdr.Free;
+    end;
   end else
     _ErrorMessage := '';
 end;
@@ -91,6 +94,8 @@ begin
     if SameText(_Host,'localhost') or SameText(_Host,'127.0.0.1') then
     begin
       try
+        resultStream := TMemoryStream.Create;
+
         // Get query used for signing locally, when server side on same computer
         http.Get('http://'+_Host+':'+inttostr(_Port)+
                  '/sign?file='+TNetEncoding.URL.Encode(FileName)+

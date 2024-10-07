@@ -6,7 +6,11 @@ program RemoteSignTool_Client;
 
 uses
   System.SysUtils,
+  System.Classes,
   System.IniFiles,
+  {$IFDEF DEBUG}
+  //Vcl.Dialogs,
+  {$ENDIF DEBUG}
   IdBaseComponent,
   IdComponent,
   IdHTTP,
@@ -15,59 +19,74 @@ uses
 var
   client: TRemoteSignToolClient;
   ini: TIniFile;
-  filetosign: string;
-  additional: string;
+  FileList: TStringList;
+  IgnoreFailed: Boolean;
   I: Integer;
 begin
   try
-    ExitCode := 2;
-    client := TRemoteSignToolClient.Create;
+    FileList := TStringList.Create;
     try
-      ini := TIniFile.Create(ChangeFileExt(ParamStr(0),'.ini'));
+      ExitCode := 2;
+      client := TRemoteSignToolClient.Create;
       try
-        client.host := ini.ReadString('server','host','localhost');
-        client.port := ini.ReadInteger('server','port',8099);
+        ini := TIniFile.Create(ChangeFileExt(ParamStr(0),'.ini'));
+        try
+          client.host := ini.ReadString('server','host','localhost');
+          client.port := ini.ReadInteger('server','port',8099);
+        finally
+          ini.Free;
+        end;
+
+        IgnoreFailed := false;
+
+        for I := 1 to ParamCount do
+        begin
+          if ParamStr(I) = '/skiperrors' then
+            IgnoreFailed := true
+          else
+          if FileExists(ParamStr(I)) then
+            FileList.Add(ParamStr(I));
+        end;
+
+        {$IFDEF DEBUG}
+        //Vcl.Dialogs.ShowMessage(FileList.Text);
+        //Halt;
+        {$ENDIF DEBUG}
+
+        if FileList.Count > 0 then
+        begin
+          for I := 0 to FileList.Count-1 do
+          begin
+            if client.SignFile(FileList[i], '') then
+            begin
+              WriteLn(FileList[i] + ' signed succesfully');
+            end else
+            begin
+              WriteLn(ErrOutput, FileList[i] + ' error: ' + client.ErrorMessage);
+              ExitCode := client.ErrorCode;
+
+              if not IgnoreFailed then
+                Exit;
+            end;
+          end;
+        end else
+        begin
+          WriteLn(ErrOutput, 'Error: File not found or not specified');
+          WriteLn('You must specify at least one file to sign!');
+          ExitCode := 1;
+          exit;
+        end;
       finally
-        ini.Free;
-      end;
-
-      filetosign := '';
-      for I := ParamCount downto 1 do
-      begin
-        if (filetosign = '') and (length(ParamStr(I)) > 0) and (ParamStr(I)[1] <> '/') and FileExists(ParamStr(I)) then
-          filetosign := ParamStr(I)
-        else
-          if not((I > 2) and (ParamStr(I-1).ToLower = '/ac')) then
-            if ParamStr(I).IndexOf(' ') > 0 then
-              additional := '"'+ParamStr(I)+'" '+additional
-            else
-              additional := ParamStr(I)+' '+additional;
-      end;
-
-      if filetosign = '' then
-      begin
-        WriteLn(ErrOutput, 'Error: File not found or not specified');
-        WriteLn('You must specify at least file to sign!');
-        ExitCode := 1;
-        exit;
-      end;
-
-      if not client.SignFile(filetosign, additional) then
-      begin
-        WriteLn(ErrOutput, 'Error: '+client.ErrorMessage);
-        ExitCode := client.ErrorCode;
-        exit;
-      end else
-      begin
-        WriteLn('File signed succesfully');
-        ExitCode := 0;
-        exit;
+        client.Free;
       end;
     finally
-      client.Free;
+      FileList.Free;
     end;
   except
     on E: Exception do
+    begin
       Writeln(E.ClassName, ': ', E.Message);
+      ExitCode := 1;
+    end;
   end;
 end.
