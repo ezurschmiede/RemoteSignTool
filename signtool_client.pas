@@ -113,9 +113,7 @@ begin
       end;
     end else
     begin
-      setlength(tempname, MAX_PATH);
-      GetTempFileName('.','cli', 0, @tempname[1]);
-      setlength(tempname, strlen(PWideChar(tempname)));
+      tempname := TPath.GetTempFileName;
 
       resultStream := TFileStream.Create(tempname, fmCreate);
       try
